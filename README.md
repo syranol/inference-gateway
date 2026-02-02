@@ -1,45 +1,49 @@
+<<<<<<< HEAD
 # Inference Gateway
+=======
+# Q2 - Inference Gateway (SSE)
+>>>>>>> 3d8fc76 (feat(q2): implement inference gateway, mock upstream, client, and tests)
 
 ## Overview
-Design a Python 3.11+ gateway that fronts an existing `/chat/completions` API and returns an
-SSE stream that always emits, in order:
+This project implements a Python 3.11+ gateway that fronts an existing `/chat/completions` API
+and returns an SSE stream that always emits, in order:
 1) Summary of the prompt
 2) Summary of the model's reasoning
 3) The model's final output
 
-The design prioritizes low TTFT, failure resilience, and strong developer experience.
+The design emphasizes low TTFT, failure resilience, and a stable developer-facing contract.
 
 ## Requirements
 ### Functional
 - Accept `/chat/completions`-style requests and forward to upstream.
-- Emit SSE stream in order: prompt summary → reasoning summary → final output.
-- Support multiple reasoning-capable models via `model` (plus optional `summary_model`).
-- Provide a client script that demonstrates consumption of the SSE stream.
+- Emit SSE in strict order: prompt summary → reasoning summary → final output.
+- Support multiple reasoning-capable models via `model` (with optional `summary_model`).
+- Provide a client script that consumes the SSE stream.
 - Handle missing/malformed reasoning boundaries per documented assumptions.
 
 ### Non-functional
 - Low TTFT (prompt summary should arrive quickly).
 - Failure resilience (timeouts, retries for summary calls, graceful error events).
-- Developer experience (clear event schema, simple request surface).
+- Developer experience (clear event schema, predictable API surface).
 - End-user experience (readable summaries, stable streaming behavior).
 - Maintainability (clear assumptions, capability registry).
 
-## Core entities (definitions)
-Establishing the key entities helps reason about responsibilities and API shape.
-
-- **GatewayRequest**: inbound request to the gateway. Likely fields: `model`, `messages`,
-  `stream`, `summary_model`, `temperature`, `max_tokens`, `request_id` (optional).
-- **UpstreamRequest**: request forwarded to `/chat/completions`, including injected system
+## Core entities
+- **GatewayRequest**: inbound request; fields include `model`, `messages`, `stream`,
+  `summary_model`, `temperature`, `max_tokens`.
+- **UpstreamRequest**: request forwarded to `/chat/completions`, with injected system
   instructions to enforce `<analysis>`/`<final>` tags.
-- **UpstreamStreamChunk**: streaming SSE chunk from upstream (delta content, metadata).
-- **SummaryTask**: non-streaming request used for prompt summary or reasoning summary.
+- **UpstreamStreamChunk**: streamed delta data from upstream.
+- **SummaryTask**: non-streaming request for prompt or reasoning summaries.
 - **GatewayEvent**: SSE events emitted by the gateway (`summary.prompt`, `summary.reasoning`,
   `output.delta`, `output.done`, `error`).
 - **ModelCapability**: per-model metadata (tag format, reasoning support, parsing strategy).
-- **RequestContext**: in-flight state (buffers, timers, correlation IDs, error state).
+- **RequestContext**: in-flight state (buffers, timers, request IDs, error state).
 
-## API design (gateway surface)
-**Endpoint**: `POST /v1/chat/completions` (OpenAI-compatible shape, with optional extensions)
+## API design
+**Endpoint**: `POST /v1/chat/completions` (OpenAI-compatible shape with optional extensions)
+**Gateway health**: `GET /healthz` (process liveness)
+**Upstream health**: `GET /upstream-health` (checks upstream reachability)
 
 **Request body (example):**
 ```json
@@ -55,7 +59,7 @@ Establishing the key entities helps reason about responsibilities and API shape.
 }
 ```
 
-**Response (SSE stream events):**
+**Response (SSE events):**
 ```
 event: summary.prompt
 data: {"text":"...","request_id":"..."}
@@ -70,7 +74,7 @@ event: output.done
 data: {"request_id":"..."}
 ```
 
-## High-level flow (ASCII diagram)
+## High-level flow
 ```
 Client
   |
@@ -84,74 +88,140 @@ Gateway
   +--> SSE: summary.prompt -> summary.reasoning -> output.delta -> output.done
 ```
 
-## Recommended approach (hybrid, capability-first)
-**Primary strategy:** enforce structured reasoning/output boundaries using a system prompt that
-wraps reasoning in `<analysis>...</analysis>` and the final answer in `<final>...</final>`.
+## Reasoning separation strategy
+- Enforce `<analysis>...</analysis>` and `<final>...</final>` boundaries via a system prompt.
+- If upstream provides explicit reasoning fields (e.g., `reasoning_content`), use them when
+  `ENABLE_PARSE_REASONING=true`; otherwise fall back to tag parsing.
 
-**Capability-first fallback:** if upstream chunks include explicit reasoning fields (e.g.,
-`reasoning_content`), use them directly. Otherwise, fall back to tag parsing. This keeps the
-solution robust without depending on upstream features the prompt says are absent.
+### Assumptions
+- Missing `<analysis>` → empty reasoning summary; treat stream as final output.
+- Missing `<final>` → treat remaining stream as reasoning; final output may be empty.
 
-**Low-TTFT ordering:** use a dual-call pipeline for summaries while streaming the main answer:
-
-1) **Call A (non-streaming, fast)**: summarize the prompt and emit immediately.
-2) **Call B (streaming)**: generate the actual answer with enforced tags; buffer reasoning tokens.
-3) **Call C (non-streaming, fast)**: summarize the buffered reasoning. While this runs, buffer
-   `<final>` tokens; once summary is ready, emit reasoning summary then flush final output and
-   continue streaming new final tokens.
-
-This preserves required ordering while minimizing latency.
-
-## Assumptions (documented behavior)
-- The gateway injects a system instruction enforcing `<analysis>`/`<final>` tags.
-- If `<analysis>` is missing, the gateway emits an empty reasoning summary and treats all tokens
-  as final output.
-- If `<final>` is missing, the gateway treats the remaining stream as reasoning and may emit an
-  empty final output.
-
-## SSE event schema (suggested)
-Use explicit event types for clarity and easy client integration:
-- `summary.prompt` -> {"text": "...", "request_id": "..."}
-- `summary.reasoning` -> {"text": "...", "request_id": "..."}
-- `output.delta` -> {"text": "...", "request_id": "..."}
-- `output.done` -> {"request_id": "..."}
-- `error` -> {"message": "...", "stage": "...", "request_id": "..."}
-
-## Failure resilience
-- Timeouts + retries with backoff for Call A/C
-- If reasoning summary fails, still stream final output and emit an `error` event
-- If upstream streaming fails, emit an `error` event with partial state
-- On client disconnect, cancel upstream stream immediately
-
-## Risks & mitigations
-- **Upstream does not distinguish reasoning vs output**: enforce `<analysis>`/`<final>` tags
-  via system prompt; fall back to tag parsing or empty summaries if missing.
-- **Ordering requirement delays output**: use dual-call pipeline and buffer final output until
-  reasoning summary is ready.
-- **Streaming failures mid-response**: emit structured SSE `error` events and close cleanly.
-- **Model variance**: maintain a capability allowlist and default to safe parsing strategies.
-- **No monkey-patching constraint**: keep all parsing and streaming logic in the gateway layer.
+## Failure handling
+- Timeouts + retries with backoff for summary calls (prompt + reasoning).
+- If reasoning summary fails, continue streaming final output and emit an `error` event.
+- If upstream streaming fails, emit an `error` event with partial state and close cleanly.
+- On client disconnect, cancel upstream stream immediately.
 
 ## Multi-model support
-- Pass through `model` from client request
-- Optional `summary_model` override for prompt/reasoning summaries
-- Maintain a small allowlist with model capabilities (tag format, reasoning support)
+- Pass through `model` from client request.
+- Optional `summary_model` override for prompt/reasoning summaries.
+- Allowlist controls via `ALLOW_MODELS`.
 
 ## Alternative approaches (tradeoffs)
-- **Inline validation / heuristics**: no prompt changes, but unreliable across models
-- **Schema-first prompting**: deterministic parsing but can drift and break streaming
-- **Dual-call only**: best latency, more moving parts and cost
+- **Inline heuristics**: no prompt changes, but unreliable across models.
+- **Schema-first prompting**: deterministic parsing but can drift and break streaming.
+- **Single-call only**: lower cost, but harder to satisfy ordering + low TTFT.
 
-## Next steps (implementation plan)
-- FastAPI gateway with SSE streaming
-- httpx for upstream streaming and retries
-- Client script that prints sections in order
-- Tests for ordering, missing tags, and upstream failure
+## Implementation components
+- FastAPI gateway with SSE streaming and upstream forwarding.
+- Tag parser + buffering to preserve required ordering.
+- Mock upstream server for local testing and env-based config for real endpoints.
+- Client script that consumes SSE events and prints sections in order.
+- Tests covering ordered output and missing-tag fallback.
 
-## Requirements (expected)
-- Python 3.11+
-- HTTP client with streaming support (e.g., httpx)
-- SSE response generation
+## Setup
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Run locally (mock upstream)
+The local demo uses three processes because the client talks to the gateway, and the gateway
+forwards to the upstream mock. All three must be running to see the expected output.
+
+Step-by-step:
+1) Start the mock upstream.
+2) Start the gateway (it calls upstream for summaries + streaming).
+3) Run the client (prints SSE events in order).
+
+Terminal 1:
+```bash
+source .venv/bin/activate
+make mock-upstream
+```
+
+Terminal 2:
+```bash
+source .venv/bin/activate
+make run-gateway
+```
+
+Terminal 3:
+```bash
+source .venv/bin/activate
+make run-client
+```
+
+## Expected output (client)
+```
+Prompt summary:
+Summary: system: You are a concise assistant... user: Explain why the sky is blue.
+
+Reasoning summary:
+Summary: Reasoning: We need to answer the user's question...
+
+The sky is blue because shorter blue wavelengths are scattered more by the atmosphere,
+making blue light reach our eyes from many directions.
+
+[done]
+```
+
+## Run with a real upstream endpoint
+```bash
+export UPSTREAM_BASE_URL="https://your-upstream-host"
+export UPSTREAM_PATH="/chat/completions"
+export UPSTREAM_API_KEY="YOUR_KEY"
+make run-gateway
+```
+
+Then call the gateway:
+```bash
+python3.11 client.py --url http://localhost:8000/v1/chat/completions --model reasoning-llm
+```
+
+## Testing
+```bash
+make test
+```
+
+## Gateway health check
+```bash
+make health-gateway
+```
+
+## Upstream health check
+```bash
+make health-upstream
+```
+
+## Development
+1) Start mock upstream:
+```bash
+make mock-upstream
+```
+
+2) Run the gateway with auto-reload:
+```bash
+make run-gateway-dev
+```
+
+3) Send a request:
+```bash
+python3.11 client.py --url http://localhost:8000/v1/chat/completions
+```
+
+## Configuration (env vars)
+- `UPSTREAM_BASE_URL` (default: `http://localhost:8001`)
+- `UPSTREAM_PATH` (default: `/chat/completions`)
+- `UPSTREAM_API_KEY` (optional)
+- `SUMMARY_MODEL_DEFAULT` (optional)
+- `ALLOW_MODELS` (comma-separated allowlist)
+- `REQUEST_TIMEOUT` (seconds, default: 60)
+- `SUMMARY_TIMEOUT` (seconds, default: 10)
+- `MAX_REASONING_CHARS` (default: 8000)
+- `ENABLE_PARSE_REASONING` (default: true; use upstream reasoning fields if present)
 
 ## AI Assistance
 This work was developed with the help of an AI coding tool as a research, brainstorming,
@@ -162,13 +232,6 @@ and review aid (not as an autonomous code generator). Specifically, I used AI to
   reasoning separation patterns).
 - Stress-test assumptions and failure modes before implementation.
 - Assist with implementation planning and code scaffolding (gateway server, client script,
-  and test harness) while I review and integrate all changes.
+  parser/state machine, and test harness) while I review and integrate all changes.
 
 All architectural decisions and the final written design were made, reviewed, and refined by me.
-
-## Planned work (implementation)
-- Build the FastAPI gateway with SSE streaming and upstream forwarding.
-- Implement tag parsing, buffering, and summary orchestration (Call A/B/C).
-- Add a mock upstream server plus env-based config for real endpoints.
-- Provide a client script and tests (ordering, missing tags, upstream failure).
-- Update README with run/test instructions and expected output.
