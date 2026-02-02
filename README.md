@@ -1,4 +1,4 @@
-# Q2 - Inference Gateway (Design)
+# Inference Gateway
 
 ## Overview
 Design a Python 3.11+ gateway that fronts an existing `/chat/completions` API and returns an
