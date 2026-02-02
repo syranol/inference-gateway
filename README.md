@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 # Inference Gateway
-=======
-# Q2 - Inference Gateway (SSE)
->>>>>>> 3d8fc76 (feat(q2): implement inference gateway, mock upstream, client, and tests)
 
 ## Overview
 This project implements a Python 3.11+ gateway that fronts an existing `/chat/completions` API
