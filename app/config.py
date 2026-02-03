@@ -27,6 +27,8 @@ class Settings:
     request_timeout: float
     summary_timeout: float
     max_reasoning_chars: int
+    upstream_max_retries: int
+    upstream_retry_backoff: float
     allow_models: set[str] | None
     summary_model_default: str | None
     enable_parse_reasoning: bool
@@ -49,6 +51,8 @@ def get_settings() -> Settings:
         request_timeout=_get_float("REQUEST_TIMEOUT", 60.0),
         summary_timeout=_get_float("SUMMARY_TIMEOUT", 10.0),
         max_reasoning_chars=_get_int("MAX_REASONING_CHARS", 8000),
+        upstream_max_retries=_get_int("UPSTREAM_MAX_RETRIES", 3),
+        upstream_retry_backoff=_get_float("UPSTREAM_RETRY_BACKOFF", 1.0),
         allow_models=allow_models,
         summary_model_default=summary_model_default,
         enable_parse_reasoning=_get_env("ENABLE_PARSE_REASONING", "true").lower()
