@@ -166,6 +166,7 @@ making blue light reach our eyes from many directions.
 
 ## Run with a real upstream endpoint
 ```bash
+source .venv/bin/activate
 export UPSTREAM_BASE_URL="https://your-upstream-host"
 export UPSTREAM_PATH="/chat/completions"
 export UPSTREAM_API_KEY="YOUR_KEY"

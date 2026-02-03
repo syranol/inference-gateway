@@ -56,7 +56,7 @@ def _inject_tag_instruction(messages: list[Message]) -> list[dict[str, str]]:
 
 
 def _build_main_payload(req: GatewayRequest) -> dict[str, Any]:
-    payload = req.dict(by_alias=True, exclude_none=True)
+    payload = req.model_dump(by_alias=True, exclude_none=True)
     payload["messages"] = _inject_tag_instruction(req.messages)
     payload["stream"] = True
     return payload

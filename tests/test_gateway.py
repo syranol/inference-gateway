@@ -44,7 +44,8 @@ async def _collect_events(client: httpx.AsyncClient, payload: dict):
 @pytest.mark.asyncio
 async def test_ordered_events_with_tags():
     app = create_app(upstream_client=FakeUpstreamClient())
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         payload = {
             "model": "reasoning-llm",
             "stream": True,
@@ -62,7 +63,8 @@ async def test_ordered_events_with_tags():
 @pytest.mark.asyncio
 async def test_missing_tags_falls_back_to_final():
     app = create_app(upstream_client=FakeUpstreamClientNoTags())
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         payload = {
             "model": "reasoning-llm",
             "stream": True,
