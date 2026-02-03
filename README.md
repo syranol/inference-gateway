@@ -84,6 +84,12 @@ Gateway
 ```
 
 ## II. How to run / test
+Clone and enter the repo first:
+```bash
+git clone https://github.com/syranol/inference-gateway.git
+cd inference-gateway
+```
+
 There are three ways to test this repository:
 I) Mock upstream (local, no credentials required).
 II) Friendli Dedicated endpoint (live API, requires endpoint ID + token).
