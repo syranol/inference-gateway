@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from typing import Any, AsyncGenerator
 
@@ -41,8 +42,33 @@ def _build_summary_payload(text: str, model: str, kind: str) -> dict[str, Any]:
             {"role": "user", "content": user},
         ],
         "stream": False,
-        "temperature": 0.2,
     }
+
+
+def _fallback_summary(text: str, max_chars: int = 400) -> str:
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    summary = " ".join(sentences[:2]).strip()
+    if len(summary) > max_chars:
+        summary = summary[:max_chars].rstrip() + "..."
+    return summary
+
+
+def _error_detail(exc: Exception) -> str:
+    if isinstance(exc, asyncio.TimeoutError):
+        return "timeout"
+    return str(exc)
+
+
+def _strip_tags(text: str) -> str:
+    return (
+        text.replace("<analysis>", "")
+        .replace("</analysis>", "")
+        .replace("<final>", "")
+        .replace("</final>", "")
+    )
 
 
 def _inject_tag_instruction(messages: list[Message]) -> list[dict[str, str]]:
@@ -88,7 +114,7 @@ async def _consume_stream(
                 if used_reasoning_field and settings.enable_parse_reasoning:
                     if not analysis_done.is_set():
                         analysis_done.set()
-                    await final_queue.put(content_text)
+                    await final_queue.put(_strip_tags(content_text))
                 else:
                     parsed = parser.feed(content_text)
                     if parsed.analysis_chunks:
@@ -188,14 +214,20 @@ def create_app(upstream_client: UpstreamClient | None = None) -> FastAPI:
                         "summary.prompt",
                         {"text": prompt_summary, "request_id": request_id},
                     )
-                except Exception:
+                except Exception as exc:
                     yield format_sse(
                         "error",
                         {
                             "message": "prompt summary failed",
                             "stage": "prompt_summary",
                             "request_id": request_id,
+                            "detail": _error_detail(exc),
                         },
+                    )
+                    fallback_summary = _fallback_summary(prompt_text)
+                    yield format_sse(
+                        "summary.prompt",
+                        {"text": fallback_summary, "request_id": request_id},
                     )
 
                 wait_tasks = {
@@ -223,18 +255,20 @@ def create_app(upstream_client: UpstreamClient | None = None) -> FastAPI:
                             "summary.reasoning",
                             {"text": reasoning_summary, "request_id": request_id},
                         )
-                    except Exception:
+                    except Exception as exc:
                         yield format_sse(
                             "error",
                             {
                                 "message": "reasoning summary failed",
                                 "stage": "reasoning_summary",
                                 "request_id": request_id,
+                                "detail": _error_detail(exc),
                             },
                         )
+                        fallback_summary = _fallback_summary(reasoning_text)
                         yield format_sse(
                             "summary.reasoning",
-                            {"text": "", "request_id": request_id},
+                            {"text": fallback_summary, "request_id": request_id},
                         )
                 else:
                     yield format_sse(

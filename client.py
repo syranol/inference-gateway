@@ -13,7 +13,11 @@ import httpx
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gateway SSE client")
     parser.add_argument("--url", default="http://localhost:8000/v1/chat/completions")
-    parser.add_argument("--model", default="reasoning-llm")
+    parser.add_argument(
+        "--model",
+        default="meta-llama-3.1-8b-instruct",
+        help="Model or endpoint ID. Optional if FRIENDLI_ENDPOINT_ID is set and --wake is used.",
+    )
     parser.add_argument(
         "--message",
         default="Explain what FriendliAI does and what makes it special.",
@@ -40,6 +44,11 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help="Polling interval in seconds for Dedicated endpoint status.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print the request payload before sending.",
     )
     return parser.parse_args()
 
@@ -121,7 +130,11 @@ def _maybe_wake_dedicated(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = _parse_args()
+    endpoint_id_env = os.getenv("FRIENDLI_ENDPOINT_ID")
+    if args.model == "meta-llama-3.1-8b-instruct" and endpoint_id_env:
+        args.model = endpoint_id_env
     if args.wake:
+        print(f"[info] using model: {args.model}")
         _maybe_wake_dedicated(args)
 
     payload = {
@@ -131,6 +144,9 @@ def main() -> None:
             {"role": "user", "content": args.message},
         ],
     }
+    if args.debug:
+        print(f"[debug] url={args.url}")
+        print(f"[debug] payload={json.dumps(payload, ensure_ascii=False)}")
 
     with httpx.Client(timeout=None) as client:
         with client.stream("POST", args.url, json=payload) as resp:

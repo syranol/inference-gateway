@@ -85,11 +85,11 @@ Gateway
 
 ## II. How to run / test
 There are three ways to test this repository:
-1) Mock upstream (local, no credentials required).
-2) Friendli Dedicated endpoint (live API, requires endpoint ID + token).
-3) Friendli Serverless quick test (live API, preconfigured model).
+I) Mock upstream (local, no credentials required).
+II) Friendli Dedicated endpoint (live API, requires endpoint ID + token).
+III) Friendli Serverless quick test (live API, preconfigured model).
 
-### Mock upstream (local)
+### I. Mock upstream (local)
 **Setup**
 ```bash
 python3.11 -m venv .venv
@@ -130,19 +130,70 @@ make run-client
 [done]
 ```
 
-### Dedicated (Friendli)
-**Setup**
+### II. Dedicated (Friendli)
+**1. Setup**
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+Note: you must provide the following in the next two steps:
+- `UPSTREAM_BASE_URL` (e.g., `https://api.friendli.ai/dedicated/v1`)
+- `UPSTREAM_API_KEY` (your Friendli token)
+- `UPSTREAM_PATH` defaults to `/chat/completions` unless you override it.
+
+**2. Run gateway (terminal 1)**
 ```bash
 source .venv/bin/activate
 export UPSTREAM_BASE_URL="https://api.friendli.ai/dedicated/v1"
 export UPSTREAM_PATH="/chat/completions"
 export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+make run-gateway
+```
+**Expected result (gateway terminal)**
+```
+uvicorn app.main:app --port 8000
+INFO:     Started server process [PID]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:PORT - "POST /v1/chat/completions HTTP/1.1" 200 OK
 ```
 
-**Steps to run**
+**3. Run client (terminal 2)**
 ```bash
-make run-gateway
-python3.11 client.py --url http://localhost:8000/v1/chat/completions --model YOUR_ENDPOINT_ID --wake
+source .venv/bin/activate
+export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+export FRIENDLI_ENDPOINT_ID="YOUR_ENDPOINT_ID"
+make run-client CLIENT_ARGS="--wake"
+```
+Note: `--model` is optional here because the client will use `FRIENDLI_ENDPOINT_ID` when set.
+Ensure `FRIENDLI_ENDPOINT_ID` is exported in the same terminal where you run `make run-client`.
+If the endpoint is offline, `--wake` will send a wake request. You should see:
+```
+python3.11 client.py --wake
+[info] using model: YOUR_ENDPOINT_ID
+[info] checking dedicated endpoint status: YOUR_ENDPOINT_ID
+[info] dedicated endpoint not ready; sending wake request
+```
+
+**Expected result (client terminal)**
+```
+python3.11 client.py --wake
+[info] using model: YOUR_ENDPOINT_ID
+[info] checking dedicated endpoint status: YOUR_ENDPOINT_ID
+[info] dedicated endpoint is already RUNNING
+
+=== 1) Summary of the prompt ===
+...
+
+=== 2) Summary of the model's reasoning ===
+...
+
+=== 3) The model's final output ===
+...
+
+[done]
 ```
 
 Tip: check Dedicated endpoint readiness first:
@@ -156,18 +207,45 @@ If `--wake` fails, verify the Dedicated endpoint is not terminated (terminated e
 - Same ordered SSE sections as the mock run.
 - Content varies based on model and prompt.
 
-### Serverless (Friendli)
-**Setup**
+### III. Serverless (Friendli)
+**1. Setup**
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+Note: you must provide the following in the next two steps:
+- `UPSTREAM_BASE_URL` (e.g., `https://api.friendli.ai/serverless/v1`)
+- `UPSTREAM_API_KEY` (your Friendli token)
+- `UPSTREAM_PATH` defaults to `/chat/completions` unless you override it.
+
+**2. Run gateway (terminal 1)**
 ```bash
 source .venv/bin/activate
 export UPSTREAM_BASE_URL="https://api.friendli.ai/serverless/v1"
 export UPSTREAM_PATH="/chat/completions"
 export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+make run-gateway
+```
+**Expected result (gateway terminal)**
+```
+uvicorn app.main:app --port 8000
+INFO:     Started server process [PID]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:PORT - "POST /v1/chat/completions HTTP/1.1" 200 OK
 ```
 
-**Steps to run**
+**3. Run client (terminal 2)**
 ```bash
-make run-gateway
+source .venv/bin/activate
+python3.11 client.py --url http://localhost:8000/v1/chat/completions --model meta-llama-3.1-8b-instruct
+```
+Note: if the recommended model is unavailable, pick another serverless model from the Friendli Suite.
+
+Alternative (use your own serverless model):
+```bash
 python3.11 client.py --url http://localhost:8000/v1/chat/completions --model YOUR_SERVERLESS_MODEL
 ```
 
@@ -175,27 +253,24 @@ python3.11 client.py --url http://localhost:8000/v1/chat/completions --model YOU
 - Same ordered SSE sections as the mock run.
 - Content varies based on model and prompt.
 
-### Serverless quick test (Friendli)
-This model is free until February 11, 2026:
-`LGAI-EXAONE/K-EXAONE-236B-A23B`
+**Expected result (client terminal)**
+```
+=== 1) Summary of the prompt ===
+FriendliAI is not specified in my knowledge database. However, I can tell you that based on your prompt, I will need more context about FriendliAI to give a thoughtful and accurate answer.
 
-**Setup**
-```bash
-source .venv/bin/activate
-export UPSTREAM_BASE_URL="https://api.friendli.ai/serverless/v1"
-export UPSTREAM_PATH="/chat/completions"
-export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+=== 2) Summary of the model's reasoning ===
+Here are the key steps and features of FriendliAI in 3 bullet points:
+
+• FriendliAI uses machine learning algorithms and NLP techniques to generate human-like responses, understanding context, sarcasm, and other nuances of human language.
+• It can learn and adapt to user preferences, interests, and communication style over time, allowing for personalized interactions and responses.
+• FriendliAI also has the capacity for empathy and emotional understanding, detecting and acknowledging emotions to build trust and rapport with users.
+
+=== 3) The model's final output ===
+There is no specific numeric answer to this question as it discusses a technology-based topic.
+
+[done]
 ```
 
-**Steps to run**
-```bash
-make run-gateway
-python3.11 client.py --url http://localhost:8000/v1/chat/completions --model LGAI-EXAONE/K-EXAONE-236B-A23B
-```
-
-**Expected result**
-- Same ordered SSE sections as the mock run.
-- Content varies based on model and prompt.
 
 ## III. How to execute tests
 ```bash
@@ -261,7 +336,9 @@ All architectural decisions and the final written design were made, reviewed, an
 ## IX. Failure handling
 - Timeouts + retries with backoff for summary calls (prompt + reasoning) and initial upstream
   stream connection (retryable 5xx, e.g., 503 during warm-up).
-- If reasoning summary fails, continue streaming final output and emit an `error` event.
+- If prompt or reasoning summary fails, continue streaming final output and emit an `error` event.
+- If prompt or reasoning summary fails or times out, emit a short fallback summary derived from
+  the first sentences of the corresponding text buffer.
 - If upstream streaming fails, emit an `error` event with partial state and close cleanly.
 - On client disconnect, cancel upstream stream immediately.
 

@@ -15,8 +15,10 @@ run-gateway:
 run-gateway-dev:
 	uvicorn app.main:app --port 8000 --reload
 
+CLIENT_ARGS ?=
+
 run-client:
-	python3.11 client.py
+	python3.11 client.py $(CLIENT_ARGS)
 
 test:
 	pytest -q
