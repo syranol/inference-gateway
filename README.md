@@ -84,9 +84,10 @@ Gateway
 ```
 
 ## II. How to run / test
-There are two ways to test this repository:
-1) Local testing with the mock upstream (no credentials required).
-2) Live API testing against a real endpoint (requires `UPSTREAM_BASE_URL` and a Friendli API key).
+There are three ways to test this repository:
+1) Mock upstream (local, no credentials required).
+2) Friendli Dedicated endpoint (live API, requires endpoint ID + token).
+3) Friendli Serverless quick test (live API, preconfigured model).
 
 ### Mock upstream (local)
 **Setup**
@@ -149,8 +150,50 @@ Tip: check Dedicated endpoint readiness first:
 export FRIENDLI_ENDPOINT_ID="YOUR_ENDPOINT_ID"
 make check-dedicated
 ```
+If `--wake` fails, verify the Dedicated endpoint is not terminated (terminated endpoints must be redeployed).
 
 **Expected result (dedicated)**
+- Same ordered SSE sections as the mock run.
+- Content varies based on model and prompt.
+
+### Serverless (Friendli)
+**Setup**
+```bash
+source .venv/bin/activate
+export UPSTREAM_BASE_URL="https://api.friendli.ai/serverless/v1"
+export UPSTREAM_PATH="/chat/completions"
+export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+```
+
+**Steps to run**
+```bash
+make run-gateway
+python3.11 client.py --url http://localhost:8000/v1/chat/completions --model YOUR_SERVERLESS_MODEL
+```
+
+**Expected result (serverless)**
+- Same ordered SSE sections as the mock run.
+- Content varies based on model and prompt.
+
+### Serverless quick test (Friendli)
+This model is free until February 11, 2026:
+`LGAI-EXAONE/K-EXAONE-236B-A23B`
+
+**Setup**
+```bash
+source .venv/bin/activate
+export UPSTREAM_BASE_URL="https://api.friendli.ai/serverless/v1"
+export UPSTREAM_PATH="/chat/completions"
+export UPSTREAM_API_KEY="YOUR_FRIENDLI_TOKEN"
+```
+
+**Steps to run**
+```bash
+make run-gateway
+python3.11 client.py --url http://localhost:8000/v1/chat/completions --model LGAI-EXAONE/K-EXAONE-236B-A23B
+```
+
+**Expected result**
 - Same ordered SSE sections as the mock run.
 - Content varies based on model and prompt.
 
